@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go-Stop Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #15130f;
+    --panel: #1e1b16;
+    --panel-border: #2e2a22;
+    --gold: #c9a227;
+    --vermillion: #a6342a;
+    --pine: #3b5d42;
+    --cream: #ede6d6;
+    --cream-dim: #a89f8c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 30px;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .hangul { font-family: 'Fraunces', serif; font-size: 14px; color: var(--cream-dim); }
+  .status-banner {
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+  .status-banner.hidden { display: none; }
+  .new-game-link {
+    background: none;
+    border: none;
+    color: var(--cream-dim);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+  section h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 17px;
+    font-weight: 500;
+    margin: 0 0 16px;
+  }
+  label { display: block; font-size: 13px; color: var(--cream-dim); margin: 0 0 8px; }
+  input[type="number"], input[type="text"] {
+    width: 100%;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--panel-border);
+    color: var(--cream);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 8px;
+  }
+  input:focus, select:focus {
+    outline: 2px solid var(--gold);
+    outline-offset: -1px;
+  }
+  button {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 18px;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--gold); color: #1a1608; width: 100%; margin-top: 16px; }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--cream);
+    width: 100%;
+    margin-top: 12px;
+  }
+  .name-field { margin-bottom: 12px; }
+  .name-field:last-of-type { margin-bottom: 0; }
+
+  #gameView.hidden, #setupCount.hidden, #setupNames.hidden { display: none; }
+
+  .table-scroll {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    -webkit-overflow-scrolling: touch;
+  }
+  table { border-collapse: collapse; width: 100%; }
+  th, td {
+    padding: 10px 12px;
+    text-align: center;
+    font-size: 14px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  thead th {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: var(--cream-dim);
+    font-size: 13px;
+    background: var(--panel);
+    cursor: pointer;
+    position: relative;
+    padding-top: 12px;
+  }
+  thead th .tx-count {
+    display: block;
+    font-size: 11px;
+    color: var(--gold);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  th.round-delete {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    font-size: 11px;
+    color: var(--cream-dim);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+  }
+  .sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--panel);
+    text-align: left;
+    font-weight: 600;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.3);
+  }
+  .sticky-total {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--panel);
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 16px;
+    box-shadow: -2px 0 4px rgba(0,0,0,0.3);
+  }
+  td.score-cell input {
+    width: 60px;
+    text-align: center;
+    padding: 8px 6px;
+  }
+  .tx-subtext {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+  .tx-pos { color: var(--gold); }
+  .tx-neg { color: var(--vermillion); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .table-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .table-actions button { margin-top: 0; flex: 1; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 10;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px 16px 0 0;
+    padding: 22px;
+    width: 100%;
+    max-width: 480px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal h3 {
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0 0 16px;
+  }
+  .tx-list { margin-bottom: 18px; }
+  .tx-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--panel-border);
+    font-size: 14px;
+  }
+  .tx-item:last-child { border-bottom: none; }
+  .tx-item .tx-amount { color: var(--gold); font-weight: 600; margin-left: 8px; }
+  .tx-empty { color: var(--cream-dim); font-size: 13px; }
+  .tx-delete {
+    background: none;
+    color: var(--cream-dim);
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+  .tx-delete:hover { color: var(--vermillion); }
+  .tx-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .tx-form .full { grid-column: 1 / -1; }
+  select {
+    width: 100%;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--panel-border);
+    color: var(--cream);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+  }
+  .modal-close {
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--cream);
+    width: 100%;
+    margin-top: 4px;
+  }
+  .error-text { color: var(--vermillion); font-size: 12px; margin: -6px 0 10px; }
+  .error-text.hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Go-Stop Ledger</h1>
+    </div>
+    <button class="new-game-link" id="newGameBtn" style="display:none;">New game</button>
+  </header>
+
+  <div id="statusBanner" class="status-banner hidden"></div>
+
+  <section id="setupCount">
+    <h2>Start a new game</h2>
+    <label for="playerCount">How many players?</label>
+    <input type="number" id="playerCount" min="2" max="12" placeholder="4">
+    <p class="error-text hidden" id="countError">Enter a number of players (2 or more).</p>
+    <button class="btn-primary" id="countContinueBtn">Continue</button>
+  </section>
+
+  <section id="setupNames" class="hidden">
+    <h2>Name the players</h2>
+    <div id="nameFields"></div>
+    <p class="error-text hidden" id="namesError">Give every player a name.</p>
+    <button class="btn-primary" id="startGameBtn">Start game</button>
+    <button class="btn-secondary" id="backToCountBtn">Back</button>
+  </section>
+
+  <div id="gameView" class="hidden">
+    <section>
+      <h2>Standings</h2>
+      <div class="table-scroll">
+        <table id="scoreTable">
+          <thead><tr id="headRow"></tr></thead>
+          <tbody id="bodyRows"></tbody>
+        </table>
+      </div>
+      <div class="table-actions">
+        <button class="btn-secondary" id="addRoundBtn">Add round</button>
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<div class="modal-overlay hidden" id="txOverlay">
+  <div class="modal">
+    <h3 id="txModalTitle">Round transactions</h3>
+    <div class="tx-list" id="txList"></div>
+    <div class="tx-form">
+      <div>
+        <label for="txFrom">Seller</label>
+        <select id="txFrom"></select>
+      </div>
+      <div>
+        <label for="txTo">Buyer</label>
+        <select id="txTo"></select>
+      </div>
+      <div class="full">
+        <label for="txAmount">Amount</label>
+        <input type="number" id="txAmount" placeholder="0">
+      </div>
+    </div>
+    <p class="error-text hidden" id="txError">Pick two different players and an amount.</p>
+    <button class="btn-primary" id="txAddBtn" style="margin-top:0;">Add transaction</button>
+    <button class="modal-close" id="txCloseBtn">Close</button>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="roundOverlay">
+  <div class="modal">
+    <h3>New round</h3>
+    <label for="roundWinner">Winner</label>
+    <select id="roundWinner"></select>
+    <div id="loserFields" style="margin-top:14px;"></div>
+    <p class="error-text hidden" id="roundError">Pick a winner and at least one loser amount.</p>
+    <div style="margin: 14px 0; font-size:14px; color:var(--cream-dim);">Winner receives <span id="winnerReceiveAmt" style="color:var(--gold); font-weight:600;">0</span></div>
+    <button class="btn-primary" id="roundAddBtn" style="margin-top:0;">Add round</button>
+    <button class="modal-close" id="roundCloseBtn">Cancel</button>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = 'gostop_game_v2';
+  let game = null;
+  let activeRoundId = null;
+
+  // ---- CONFIGURE THIS ----
+  // Replace with your Supabase project URL and anon public key
+  // (Project Settings -> API in your Supabase dashboard).
+  // Leaving these as-is runs the app in local-only mode.
+  const SUPABASE_URL = 'https://fwmcwoedvnevdulbmeax.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_QySDNGV7TuirgpNOHJRbZg_nEmzIwCk';
+  // -------------------------
+
+  const cloudEnabled = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+  let supabase = null;
+  if (cloudEnabled) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+
+  function showBanner(msg, isError) {
+    const el = document.getElementById('statusBanner');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    el.style.border = '1px solid ' + (isError ? 'rgba(166,52,42,0.4)' : 'rgba(59,93,66,0.4)');
+    el.style.background = isError ? 'rgba(166,52,42,0.15)' : 'rgba(59,93,66,0.15)';
+    el.style.color = isError ? '#e8b3ac' : '#a9c7ae';
+  }
+
+  function loadGame() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; }
+  }
+  function saveGame() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
+    pushToCloud();
+  }
+
+  async function pushToCloud() {
+    if (!cloudEnabled || !game) return;
+    const { error } = await supabase
+      .from('go_stop_games')
+      .upsert({ id: 'primary', players: game.players, rounds: game.rounds, updated_at: new Date().toISOString() });
+    if (error) showBanner('Saved locally, but cloud sync failed: ' + error.message, true);
+  }
+
+  async function loadFromCloud() {
+    const { data, error } = await supabase
+      .from('go_stop_games')
+      .select('*')
+      .eq('id', 'primary')
+      .maybeSingle();
+    if (error) {
+      showBanner('Cloud sync not connected — using local storage. (' + error.message + ')', true);
+      return null;
+    }
+    return data;
+  }
+
+  function showSetupCount() {
+    document.getElementById('setupCount').classList.remove('hidden');
+    document.getElementById('setupNames').classList.add('hidden');
+    document.getElementById('gameView').classList.add('hidden');
+    document.getElementById('newGameBtn').style.display = 'none';
+  }
+
+  function showSetupNames(count) {
+    document.getElementById('setupCount').classList.add('hidden');
+    document.getElementById('setupNames').classList.remove('hidden');
+    const fields = document.getElementById('nameFields');
+    fields.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+      const div = document.createElement('div');
+      div.className = 'name-field';
+      div.innerHTML = `<label for="pname-${i}">Player ${i + 1}</label><input type="text" id="pname-${i}" placeholder="Name">`;
+      fields.appendChild(div);
+    }
+  }
+
+  function showGameView() {
+    document.getElementById('setupCount').classList.add('hidden');
+    document.getElementById('setupNames').classList.add('hidden');
+    document.getElementById('gameView').classList.remove('hidden');
+    document.getElementById('newGameBtn').style.display = 'inline';
+    renderTable();
+  }
+
+  document.getElementById('countContinueBtn').addEventListener('click', () => {
+    const val = parseInt(document.getElementById('playerCount').value, 10);
+    const errEl = document.getElementById('countError');
+    if (!val || val < 2) {
+      errEl.classList.remove('hidden');
+      return;
+    }
+    errEl.classList.add('hidden');
+    showSetupNames(val);
+  });
+
+  document.getElementById('backToCountBtn').addEventListener('click', showSetupCount);
+
+  document.getElementById('startGameBtn').addEventListener('click', () => {
+    const count = document.querySelectorAll('#nameFields input').length;
+    const names = [];
+    for (let i = 0; i < count; i++) {
+      const v = document.getElementById(`pname-${i}`).value.trim();
+      names.push(v);
+    }
+    const errEl = document.getElementById('namesError');
+    if (names.some(n => n === '')) {
+      errEl.classList.remove('hidden');
+      return;
+    }
+    errEl.classList.add('hidden');
+    game = { players: names, rounds: [] };
+    saveGame();
+    showGameView();
+  });
+
+  document.getElementById('newGameBtn').addEventListener('click', () => {
+    if (confirm('Start a new game? This clears the current one.')) {
+      localStorage.removeItem(STORAGE_KEY);
+      game = null;
+      document.getElementById('playerCount').value = '';
+      showSetupCount();
+      if (cloudEnabled) {
+        supabase.from('go_stop_games').delete().eq('id', 'primary');
+      }
+    }
+  });
+
+  function computeRoundNetTx(round, player) {
+    let net = 0;
+    round.transactions.forEach(t => {
+      if (t.from === player) net += t.amount;
+      if (t.to === player) net -= t.amount;
+    });
+    return net;
+  }
+
+  function computeTotals() {
+    const totals = {};
+    game.players.forEach(p => totals[p] = 0);
+    game.rounds.forEach(r => {
+      game.players.forEach(p => {
+        totals[p] += (r.scores[p] || 0) + computeRoundNetTx(r, p);
+      });
+    });
+    return totals;
+  }
+
+  function renderTable() {
+    const head = document.getElementById('headRow');
+    const body = document.getElementById('bodyRows');
+    const totals = computeTotals();
+
+    head.innerHTML = '<th class="sticky-col">Player</th>' +
+      game.rounds.map((r, idx) => `
+        <th data-round-id="${r.id}" class="round-head">
+          R${idx + 1}
+          ${r.transactions.length ? `<span class="tx-count">${r.transactions.length} sale${r.transactions.length > 1 ? 's' : ''}</span>` : `<span class="tx-count">add sale</span>`}
+        </th>
+      `).join('') +
+      '<th class="sticky-total">Total</th>';
+
+    body.innerHTML = game.players.map(p => `
+      <tr>
+        <td class="sticky-col">${p}</td>
+        ${game.rounds.map(r => {
+          const net = computeRoundNetTx(r, p);
+          return `
+          <td class="score-cell">
+            <input type="number" value="${r.scores[p] ?? ''}" placeholder="0"
+              data-round-id="${r.id}" data-player="${p}" class="score-input">
+            ${net !== 0 ? `<span class="tx-subtext ${net > 0 ? 'tx-pos' : 'tx-neg'}">${net > 0 ? '+' : ''}${net} sale</span>` : ''}
+          </td>
+        `;
+        }).join('')}
+        <td class="sticky-total">${totals[p] > 0 ? '+' : ''}${totals[p]}</td>
+      </tr>
+    `).join('');
+
+    document.querySelectorAll('.round-head').forEach(th => {
+      th.addEventListener('click', () => openTxModal(th.dataset.roundId));
+    });
+
+    document.querySelectorAll('.score-input').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const roundId = e.target.dataset.roundId;
+        const player = e.target.dataset.player;
+        const round = game.rounds.find(r => r.id === roundId);
+        round.scores[player] = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+        saveGame();
+        const totalsNow = computeTotals();
+        document.querySelectorAll('#bodyRows tr').forEach((tr, i) => {
+          tr.querySelector('.sticky-total').textContent =
+            (totalsNow[game.players[i]] > 0 ? '+' : '') + totalsNow[game.players[i]];
+        });
+      });
+    });
+  }
+
+  document.getElementById('addRoundBtn').addEventListener('click', openRoundModal);
+
+  function openRoundModal() {
+    const winnerSel = document.getElementById('roundWinner');
+    winnerSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    renderLoserFields();
+    document.getElementById('roundError').classList.add('hidden');
+    document.getElementById('roundOverlay').classList.remove('hidden');
+  }
+
+  function renderLoserFields() {
+    const winner = document.getElementById('roundWinner').value;
+    const others = game.players.filter(p => p !== winner);
+    const container = document.getElementById('loserFields');
+    container.innerHTML = others.map(p => `
+      <div class="name-field">
+        <label for="loser-${p}">${p} loses</label>
+        <input type="number" id="loser-${p}" data-player="${p}" class="loser-input" placeholder="0" min="0">
+      </div>
+    `).join('');
+    container.querySelectorAll('.loser-input').forEach(inp => {
+      inp.addEventListener('input', updateWinnerReceiveAmt);
+    });
+    updateWinnerReceiveAmt();
+  }
+
+  function updateWinnerReceiveAmt() {
+    let sum = 0;
+    document.querySelectorAll('.loser-input').forEach(inp => {
+      const v = parseInt(inp.value, 10);
+      if (!isNaN(v) && v > 0) sum += v;
+    });
+    document.getElementById('winnerReceiveAmt').textContent = sum;
+  }
+
+  document.getElementById('roundWinner').addEventListener('change', renderLoserFields);
+
+  document.getElementById('roundAddBtn').addEventListener('click', () => {
+    const winner = document.getElementById('roundWinner').value;
+    const errEl = document.getElementById('roundError');
+    const loserInputs = document.querySelectorAll('.loser-input');
+    const scores = {};
+    game.players.forEach(p => scores[p] = 0);
+    let sum = 0;
+    let anyLoser = false;
+
+    loserInputs.forEach(inp => {
+      const v = parseInt(inp.value, 10);
+      if (!isNaN(v) && v > 0) {
+        scores[inp.dataset.player] = -v;
+        sum += v;
+        anyLoser = true;
+      }
+    });
+
+    if (!winner || !anyLoser) {
+      errEl.classList.remove('hidden');
+      return;
+    }
+    errEl.classList.add('hidden');
+    scores[winner] = sum;
+
+    const id = 'round-' + Date.now();
+    game.rounds.push({ id, scores, transactions: [] });
+    saveGame();
+    renderTable();
+    document.getElementById('roundOverlay').classList.add('hidden');
+    const scroller = document.querySelector('.table-scroll');
+    scroller.scrollLeft = scroller.scrollWidth;
+  });
+
+  document.getElementById('roundCloseBtn').addEventListener('click', () => {
+    document.getElementById('roundOverlay').classList.add('hidden');
+  });
+
+  function openTxModal(roundId) {
+    activeRoundId = roundId;
+    const round = game.rounds.find(r => r.id === roundId);
+    const idx = game.rounds.indexOf(round);
+    document.getElementById('txModalTitle').textContent = `Round ${idx + 1} transactions`;
+
+    const fromSel = document.getElementById('txFrom');
+    const toSel = document.getElementById('txTo');
+    fromSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    toSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    toSel.selectedIndex = game.players.length > 1 ? 1 : 0;
+
+    renderTxList(round);
+    document.getElementById('txError').classList.add('hidden');
+    document.getElementById('txAmount').value = '';
+    document.getElementById('txOverlay').classList.remove('hidden');
+  }
+
+  function renderTxList(round) {
+    const list = document.getElementById('txList');
+    if (round.transactions.length === 0) {
+      list.innerHTML = '<p class="tx-empty">No card sales logged for this round yet.</p>';
+      return;
+    }
+    list.innerHTML = round.transactions.map(t => `
+      <div class="tx-item">
+        <span>${t.from} &rarr; ${t.to} <span class="tx-amount">${t.amount}</span></span>
+        <button class="tx-delete" data-tx-id="${t.id}">Remove</button>
+      </div>
+    `).join('');
+    list.querySelectorAll('.tx-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        round.transactions = round.transactions.filter(t => t.id !== btn.dataset.txId);
+        saveGame();
+        renderTxList(round);
+        renderTable();
+      });
+    });
+  }
+
+  document.getElementById('txAddBtn').addEventListener('click', () => {
+    const round = game.rounds.find(r => r.id === activeRoundId);
+    const from = document.getElementById('txFrom').value;
+    const to = document.getElementById('txTo').value;
+    const amount = parseInt(document.getElementById('txAmount').value, 10);
+    const errEl = document.getElementById('txError');
+
+    if (!from || !to || from === to || !amount || amount <= 0) {
+      errEl.classList.remove('hidden');
+      return;
+    }
+    errEl.classList.add('hidden');
+
+    round.transactions.push({ id: 'tx-' + Date.now(), from, to, amount });
+    saveGame();
+    renderTxList(round);
+    document.getElementById('txAmount').value = '';
+    renderTable();
+  });
+
+  document.getElementById('txCloseBtn').addEventListener('click', () => {
+    document.getElementById('txOverlay').classList.add('hidden');
+  });
+
+  async function init() {
+    game = loadGame();
+    if (cloudEnabled) {
+      const cloudData = await loadFromCloud();
+      if (cloudData) {
+        game = { players: cloudData.players, rounds: cloudData.rounds };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(game));
+      }
+    } else {
+      showBanner('Running in local-only mode. Add your Supabase URL and anon key in the code to enable cloud sync.', false);
+    }
+    if (game && game.players && game.players.length) {
+      showGameView();
+    } else {
+      showSetupCount();
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
