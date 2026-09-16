@@ -366,11 +366,11 @@
   // -------------------------
 
   let cloudEnabled = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
-  let supabase = null;
+  let supabaseClient = null;
   if (cloudEnabled) {
     try {
       if (!window.supabase) throw new Error('Supabase library failed to load');
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     } catch (e) {
       cloudEnabled = false;
       console.error('Supabase init failed, continuing in local-only mode:', e);
@@ -396,14 +396,14 @@
 
   async function pushToCloud() {
     if (!cloudEnabled || !game) return;
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('go_stop_games')
       .upsert({ id: 'primary', players: game.players, rounds: game.rounds, updated_at: new Date().toISOString() });
     if (error) showBanner('Saved locally, but cloud sync failed: ' + error.message, true);
   }
 
   async function loadFromCloud() {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('go_stop_games')
       .select('*')
       .eq('id', 'primary')
@@ -481,7 +481,7 @@
       document.getElementById('playerCount').value = '';
       showSetupCount();
       if (cloudEnabled) {
-        supabase.from('go_stop_games').delete().eq('id', 'primary');
+        supabaseClient.from('go_stop_games').delete().eq('id', 'primary');
       }
     }
   });
