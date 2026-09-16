@@ -10,7 +10,7 @@
 <title>Go-Stop Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #15130f;
@@ -364,10 +364,16 @@
   const SUPABASE_ANON_KEY = 'sb_publishable_QySDNGV7TuirgpNOHJRbZg_nEmzIwCk';
   // -------------------------
 
-  const cloudEnabled = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+  let cloudEnabled = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
   let supabase = null;
   if (cloudEnabled) {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    try {
+      if (!window.supabase) throw new Error('Supabase library failed to load');
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    } catch (e) {
+      cloudEnabled = false;
+      console.error('Supabase init failed, continuing in local-only mode:', e);
+    }
   }
 
   function showBanner(msg, isError) {
