@@ -188,6 +188,11 @@
   }
   .tx-pos { color: var(--gold); }
   .tx-neg { color: var(--vermillion); }
+  .pending-tag { color: var(--vermillion) !important; }
+  .score-pending {
+    color: var(--cream-dim);
+    font-size: 16px;
+  }
   tbody tr:last-child td { border-bottom: none; }
 
   .table-actions {
@@ -223,6 +228,23 @@
     font-weight: 500;
     margin: 0 0 16px;
   }
+  .modal-subheading {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cream-dim);
+    margin: 0 0 12px;
+  }
+  .modal-divider {
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 22px 0;
+  }
+  .result-status {
+    font-size: 13px;
+    margin: -4px 0 14px;
+  }
+  .result-status.pending { color: var(--vermillion); }
+  .result-status.done { color: var(--pine); }
   .tx-list { margin-bottom: 18px; }
   .tx-item {
     display: flex;
@@ -315,9 +337,11 @@
 
 </div>
 
-<div class="modal-overlay hidden" id="txOverlay">
+<div class="modal-overlay hidden" id="roundDetailOverlay">
   <div class="modal">
-    <h3 id="txModalTitle">Round transactions</h3>
+    <h3 id="roundDetailTitle">Round</h3>
+
+    <h4 class="modal-subheading">Card sales</h4>
     <div class="tx-list" id="txList"></div>
     <div class="tx-form">
       <div>
@@ -334,21 +358,20 @@
       </div>
     </div>
     <p class="error-text hidden" id="txError">Pick two different players and an amount.</p>
-    <button class="btn-primary" id="txAddBtn" style="margin-top:0;">Add transaction</button>
-    <button class="modal-close" id="txCloseBtn">Close</button>
-  </div>
-</div>
+    <button class="btn-secondary" id="txAddBtn" style="margin-top:0;">Add sale</button>
 
-<div class="modal-overlay hidden" id="roundOverlay">
-  <div class="modal">
-    <h3>New round</h3>
+    <hr class="modal-divider">
+
+    <h4 class="modal-subheading">Round result</h4>
+    <p class="result-status" id="resultStatus"></p>
     <label for="roundWinner">Winner</label>
     <select id="roundWinner"></select>
     <div id="loserFields" style="margin-top:14px;"></div>
     <p class="error-text hidden" id="roundError">Pick a winner and at least one loser amount.</p>
     <div style="margin: 14px 0; font-size:14px; color:var(--cream-dim);">Winner receives <span id="winnerReceiveAmt" style="color:var(--gold); font-weight:600;">0</span></div>
-    <button class="btn-primary" id="roundAddBtn" style="margin-top:0;">Add round</button>
-    <button class="modal-close" id="roundCloseBtn">Cancel</button>
+    <button class="btn-primary" id="roundSaveBtn" style="margin-top:0;">Save result</button>
+
+    <button class="modal-close" id="roundDetailCloseBtn">Close</button>
   </div>
 </div>
 
@@ -512,12 +535,20 @@
     const totals = computeTotals();
 
     head.innerHTML = '<th class="sticky-col">Player</th>' +
-      game.rounds.map((r, idx) => `
+      game.rounds.map((r, idx) => {
+        let subtext = '';
+        if (!r.resultEntered) {
+          subtext = `<span class="tx-count pending-tag">pending</span>`;
+        } else if (r.transactions.length) {
+          subtext = `<span class="tx-count">${r.transactions.length} sale${r.transactions.length > 1 ? 's' : ''}</span>`;
+        }
+        return `
         <th data-round-id="${r.id}" class="round-head">
           R${idx + 1}
-          ${r.transactions.length ? `<span class="tx-count">${r.transactions.length} sale${r.transactions.length > 1 ? 's' : ''}</span>` : `<span class="tx-count">add sale</span>`}
+          ${subtext}
         </th>
-      `).join('') +
+      `;
+      }).join('') +
       '<th class="sticky-total">Total</th>';
 
     body.innerHTML = game.players.map(p => `
@@ -525,11 +556,20 @@
         <td class="sticky-col">${p}</td>
         ${game.rounds.map(r => {
           const net = computeRoundNetTx(r, p);
+          const txSubtext = net !== 0 ? `<span class="tx-subtext ${net > 0 ? 'tx-pos' : 'tx-neg'}">${net > 0 ? '+' : ''}${net} sale</span>` : '';
+          if (!r.resultEntered) {
+            return `
+            <td class="score-cell">
+              <span class="score-pending">&ndash;</span>
+              ${txSubtext}
+            </td>
+          `;
+          }
           return `
           <td class="score-cell">
             <input type="number" value="${r.scores[p] ?? ''}" placeholder="0"
               data-round-id="${r.id}" data-player="${p}" class="score-input">
-            ${net !== 0 ? `<span class="tx-subtext ${net > 0 ? 'tx-pos' : 'tx-neg'}">${net > 0 ? '+' : ''}${net} sale</span>` : ''}
+            ${txSubtext}
           </td>
         `;
         }).join('')}
@@ -538,7 +578,7 @@
     `).join('');
 
     document.querySelectorAll('.round-head').forEach(th => {
-      th.addEventListener('click', () => openTxModal(th.dataset.roundId));
+      th.addEventListener('click', () => openRoundDetail(th.dataset.roundId));
     });
 
     document.querySelectorAll('.score-input').forEach(input => {
@@ -557,26 +597,80 @@
     });
   }
 
-  document.getElementById('addRoundBtn').addEventListener('click', openRoundModal);
+  document.getElementById('addRoundBtn').addEventListener('click', () => {
+    const id = 'round-' + Date.now();
+    const scores = {};
+    game.players.forEach(p => scores[p] = 0);
+    game.rounds.push({ id, scores, transactions: [], resultEntered: false });
+    saveGame();
+    renderTable();
+    const scroller = document.querySelector('.table-scroll');
+    scroller.scrollLeft = scroller.scrollWidth;
+    openRoundDetail(id);
+  });
 
-  function openRoundModal() {
+  function currentRound() {
+    return game.rounds.find(r => r.id === activeRoundId);
+  }
+
+  function openRoundDetail(roundId) {
+    activeRoundId = roundId;
+    const round = currentRound();
+    const idx = game.rounds.indexOf(round);
+    document.getElementById('roundDetailTitle').textContent = `Round ${idx + 1}`;
+
+    const fromSel = document.getElementById('txFrom');
+    const toSel = document.getElementById('txTo');
+    fromSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    toSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    toSel.selectedIndex = game.players.length > 1 ? 1 : 0;
+    renderTxList(round);
+    document.getElementById('txError').classList.add('hidden');
+    document.getElementById('txAmount').value = '';
+
+    renderResultSection();
+
+    document.getElementById('roundDetailOverlay').classList.remove('hidden');
+  }
+
+  function renderResultSection() {
+    const round = currentRound();
+    const statusEl = document.getElementById('resultStatus');
+    if (round.resultEntered) {
+      statusEl.textContent = 'Result entered — edit below if needed.';
+      statusEl.className = 'result-status done';
+    } else {
+      statusEl.textContent = 'Not entered yet — fine to leave this until the round finishes.';
+      statusEl.className = 'result-status pending';
+    }
+
+    let currentWinner = '';
+    if (round.resultEntered) {
+      currentWinner = game.players.find(p => (round.scores[p] || 0) > 0) || '';
+    }
+
     const winnerSel = document.getElementById('roundWinner');
-    winnerSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
+    winnerSel.innerHTML = '<option value="">Select winner</option>' +
+      game.players.map(p => `<option value="${p}" ${p === currentWinner ? 'selected' : ''}>${p}</option>`).join('');
+
     renderLoserFields();
     document.getElementById('roundError').classList.add('hidden');
-    document.getElementById('roundOverlay').classList.remove('hidden');
   }
 
   function renderLoserFields() {
+    const round = currentRound();
     const winner = document.getElementById('roundWinner').value;
     const others = game.players.filter(p => p !== winner);
     const container = document.getElementById('loserFields');
-    container.innerHTML = others.map(p => `
-      <div class="name-field">
-        <label for="loser-${p}">${p} loses</label>
-        <input type="number" id="loser-${p}" data-player="${p}" class="loser-input" placeholder="0" min="0">
-      </div>
-    `).join('');
+    container.innerHTML = others.map(p => {
+      const existing = round.resultEntered && (round.scores[p] || 0) < 0 ? Math.abs(round.scores[p]) : '';
+      return `
+        <div class="name-field">
+          <label for="loser-${p}">${p} loses</label>
+          <input type="number" id="loser-${p}" data-player="${p}" class="loser-input" placeholder="0" min="0" value="${existing}">
+        </div>
+      `;
+    }).join('');
     container.querySelectorAll('.loser-input').forEach(inp => {
       inp.addEventListener('input', updateWinnerReceiveAmt);
     });
@@ -594,7 +688,8 @@
 
   document.getElementById('roundWinner').addEventListener('change', renderLoserFields);
 
-  document.getElementById('roundAddBtn').addEventListener('click', () => {
+  document.getElementById('roundSaveBtn').addEventListener('click', () => {
+    const round = currentRound();
     const winner = document.getElementById('roundWinner').value;
     const errEl = document.getElementById('roundError');
     const loserInputs = document.querySelectorAll('.loser-input');
@@ -619,36 +714,16 @@
     errEl.classList.add('hidden');
     scores[winner] = sum;
 
-    const id = 'round-' + Date.now();
-    game.rounds.push({ id, scores, transactions: [] });
+    round.scores = scores;
+    round.resultEntered = true;
     saveGame();
     renderTable();
-    document.getElementById('roundOverlay').classList.add('hidden');
-    const scroller = document.querySelector('.table-scroll');
-    scroller.scrollLeft = scroller.scrollWidth;
+    document.getElementById('roundDetailOverlay').classList.add('hidden');
   });
 
-  document.getElementById('roundCloseBtn').addEventListener('click', () => {
-    document.getElementById('roundOverlay').classList.add('hidden');
+  document.getElementById('roundDetailCloseBtn').addEventListener('click', () => {
+    document.getElementById('roundDetailOverlay').classList.add('hidden');
   });
-
-  function openTxModal(roundId) {
-    activeRoundId = roundId;
-    const round = game.rounds.find(r => r.id === roundId);
-    const idx = game.rounds.indexOf(round);
-    document.getElementById('txModalTitle').textContent = `Round ${idx + 1} transactions`;
-
-    const fromSel = document.getElementById('txFrom');
-    const toSel = document.getElementById('txTo');
-    fromSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
-    toSel.innerHTML = game.players.map(p => `<option value="${p}">${p}</option>`).join('');
-    toSel.selectedIndex = game.players.length > 1 ? 1 : 0;
-
-    renderTxList(round);
-    document.getElementById('txError').classList.add('hidden');
-    document.getElementById('txAmount').value = '';
-    document.getElementById('txOverlay').classList.remove('hidden');
-  }
 
   function renderTxList(round) {
     const list = document.getElementById('txList');
@@ -673,7 +748,7 @@
   }
 
   document.getElementById('txAddBtn').addEventListener('click', () => {
-    const round = game.rounds.find(r => r.id === activeRoundId);
+    const round = currentRound();
     const from = document.getElementById('txFrom').value;
     const to = document.getElementById('txTo').value;
     const amount = parseInt(document.getElementById('txAmount').value, 10);
@@ -690,10 +765,6 @@
     renderTxList(round);
     document.getElementById('txAmount').value = '';
     renderTable();
-  });
-
-  document.getElementById('txCloseBtn').addEventListener('click', () => {
-    document.getElementById('txOverlay').classList.add('hidden');
   });
 
   async function init() {
