@@ -77,9 +77,15 @@
 const SUPABASE_URL = "";
 const SUPABASE_ANON_KEY = "";
 
+function cleanUrl(u) {
+  u = (u || "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try { return new URL(u).origin; } catch (e) { return u; }
+}
 const cfg = {
-  url: SUPABASE_URL || localStorage.getItem("chores_sb_url") || "",
-  key: SUPABASE_ANON_KEY || localStorage.getItem("chores_sb_key") || ""
+  url: cleanUrl(SUPABASE_URL || localStorage.getItem("chores_sb_url") || ""),
+  key: (SUPABASE_ANON_KEY || localStorage.getItem("chores_sb_key") || "").replace(/\s+/g, "")
 };
 
 const app = document.getElementById("app");
@@ -106,8 +112,8 @@ function showSetup() {
       <button class="btn" id="save">Save &amp; connect</button>
     </div>`;
   document.getElementById("save").onclick = () => {
-    const u = document.getElementById("u").value.trim();
-    const k = document.getElementById("k").value.trim();
+    const u = cleanUrl(document.getElementById("u").value);
+    const k = document.getElementById("k").value.replace(/\s+/g, "");
     if (!u || !k) return;
     localStorage.setItem("chores_sb_url", u);
     localStorage.setItem("chores_sb_key", k);
@@ -122,7 +128,21 @@ async function load() {
     sb.from("completions").select("chore_id, done_on")
   ]);
   const err = m.error || c.error || d.error;
-  if (err) { toast("Load failed: " + err.message); return; }
+  if (err) {
+    toast("Load failed: " + err.message);
+    if (!app.innerHTML.trim()) {
+      app.innerHTML = `<div class="setup"><h1>Can't connect</h1>
+        <p>${esc(err.message)}</p>
+        <p>Check the URL and key, then re-enter them.</p>
+        <button class="btn" id="reset">Re-enter Supabase details</button></div>`;
+      document.getElementById("reset").onclick = () => {
+        localStorage.removeItem("chores_sb_url");
+        localStorage.removeItem("chores_sb_key");
+        location.reload();
+      };
+    }
+    return;
+  }
   state = { members: m.data, chores: c.data, completions: d.data };
   render();
 }
